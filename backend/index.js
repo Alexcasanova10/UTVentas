@@ -48,6 +48,15 @@ app.get('/', (req, res) => {
     res.send("Hola mundo UTVentas - Servidor Express funcionando");
 });
 
+// paypal payment api for client key;
+app.use('/api/config/paypal', (req, res) => {
+  res.send(process.env.PAYPAL_CLIENT_ID);
+});
+
+app.get('/api/config/paypal', (req, res) => {
+  res.send(process.env.PAYPAL_CLIENT_ID);
+});
+
 // Ruta para probar la conexión a la BD
 app.get('/api/test-db', async (req, res) => {
     try {
@@ -65,27 +74,36 @@ app.get('/api/test-db', async (req, res) => {
     }
 });
 
-
 /*
+
 //Importar rutas
 const sesionUsuarioRoute = require("./src/routes/SesionUsuario/apis-sesion")
 
 // RUTAS DE EJEMPLO
 const protectedRoute = require("./src/routes/SesionUsuario/protegidasRoutes")
 
-const supervisorRoute = require("./src/routes/Perfiles/apis-supervisor")
-const operadorRoute = require("./src/routes/Perfiles/apis-operador.js")
-
+const adminRoute = require("./src/routes/Perfiles/api-admin")
+const vendedorRoute = require("./src/routes/Perfiles/api-vendedor")
+const compradorRoute = require("./src/routes/Perfiles/api-comprador")
+const productoRoute = require("./src/routes/Perfiles/api-productos")
+ 
 
 //Route SesionesUsuario
 app.use("/api/sesiones",sesionUsuarioRoute)
 
-//Route protegidas EJEMPLO
+//Route protegidas
 app.use("/api/protegidas",protectedRoute)
 
-//Route supervisor
-app.use("/api/supervisor",supervisorRoute)
- */
+//Route admin
+app.use("/api/admin",adminRoute)
+
+//Route vendedor
+app.use("/api/admin",vendedorRoute)
+
+//Route producto
+app.use("/api/admin",productoRoute)
+
+*/
 
 
 // Middleware para rutas no encontradas

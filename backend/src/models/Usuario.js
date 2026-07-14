@@ -1,44 +1,46 @@
 const { DataTypes } = require('sequelize');
-const sequelize = require('../config/database');
 
-const Usuario = sequelize.define('usuarios', {
-    id: {
-        type: DataTypes.INTEGER,
-        primaryKey: true,
-        autoIncrement: true
+module.exports = (sequelize) => {
+  return sequelize.define('Usuario', {
+    usuario_id: {
+      type: DataTypes.INTEGER,
+      primaryKey: true,
+      autoIncrement: true
     },
     nombre: {
-        type: DataTypes.STRING(100),
-        allowNull: false
+      type: DataTypes.STRING(100),
+      allowNull: false
     },
-    numero_empleado: {
-        type: DataTypes.STRING(50),
-        unique: true,
-        allowNull: true
+    correo: {
+      type: DataTypes.STRING(150),
+      allowNull: false,
+      unique: true,
+      validate: {
+        isEmail: true
+      }
     },
-    password: {
-        type: DataTypes.STRING(255),
-        allowNull: false
+    contrasena_hash: {
+      type: DataTypes.STRING(255),
+      allowNull: false
+    },
+    telefono_defecto: {
+      type: DataTypes.STRING(20),
+      allowNull: true
     },
     rol_id: {
-        type: DataTypes.INTEGER,
-        allowNull: false,
-        references: {
-            model: 'roles',
-            key: 'id'
-        }
+      type: DataTypes.INTEGER,
+      allowNull: true
     },
-    activo: {
-        type: DataTypes.BOOLEAN,
-        defaultValue: true
+    fecha_registro: {
+      type: DataTypes.DATE,
+      defaultValue: DataTypes.NOW
     },
-    fecha_creacion: {
-        type: DataTypes.DATE,
-        defaultValue: DataTypes.NOW
+    es_verificado: {
+      type: DataTypes.BOOLEAN,
+      defaultValue: false
     }
-}, {
+  }, {
     tableName: 'usuarios',
     timestamps: false
-});
-
-module.exports = Usuario;
+  });
+};

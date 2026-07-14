@@ -1,8 +1,8 @@
 const { DataTypes } = require('sequelize');
 
 module.exports = (sequelize) => {
-  return sequelize.define('Rol', {
-    rol_id: {
+  return sequelize.define('Categoria', {
+    categoria_id: {
       type: DataTypes.INTEGER,
       primaryKey: true,
       autoIncrement: true
@@ -13,7 +13,7 @@ module.exports = (sequelize) => {
       unique: true
     }
   }, {
-    tableName: 'roles',
+    tableName: 'categorias',
     timestamps: false
   });
 };

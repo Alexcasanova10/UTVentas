@@ -1,106 +1,94 @@
+
 const sequelize = require('../config/database');
+require('dotenv').config();
 
-const Rol = require('./Rol');
-const Usuario = require('./Usuario');
-const TokenMovil = require('./TokenMovil');
-const Estacion = require('./Estacion');
-const OrdenTrabajo = require('./OrdenTrabajo');
-const Pieza = require('./Pieza');
-const InspeccionCalidad = require('./InspeccionCalidad');
-const ParoLinea = require('./ParoLinea');
-const Movimiento = require('./Movimiento');
-const FallaTecnica = require('./FallaTecnica');
-const Evidencia = require('./Evidencia');
-const Notificacion = require('./Notificacion');
+// Importar Modelos
+const Rol = require('./Rol')(sequelize);
+const Usuario = require('./Usuario')(sequelize);
+const Categoria = require('./Categoria')(sequelize);
+const Producto = require('./Producto')(sequelize);
+const ProductoImagen = require('./ProductoImagen')(sequelize);
+const Pedido = require('./Pedido')(sequelize);
+const Disputa = require('./Disputa')(sequelize);
+const RetiroVendedor = require('./RetiroVendedor')(sequelize);
+const HistoricoPedido = require('./HistoricoPedido')(sequelize);
+const TransaccionPremium = require('./TransaccionPremium')(sequelize);
 
-// Definir relaciones
+// --- DEFINICIÓN DE RELACIONES (ASOCIACIONES) ---
 
-// Rol - Usuario (1:N)
-Rol.hasMany(Usuario, { foreignKey: 'rol_id' });
+// Roles <-> Usuarios
+Rol.hasMany(Usuario, { foreignKey: 'rol_id', onDelete: 'SET NULL' });
 Usuario.belongsTo(Rol, { foreignKey: 'rol_id' });
 
-// Usuario - TokenMovil (1:N)
-Usuario.hasMany(TokenMovil, { foreignKey: 'usuario_id' });
-TokenMovil.belongsTo(Usuario, { foreignKey: 'usuario_id' });
+// Usuarios <-> Productos
+Usuario.hasMany(Producto, { foreignKey: 'usuario_id', onDelete: 'CASCADE' });
+Producto.belongsTo(Usuario, { foreignKey: 'usuario_id' });
 
-// Usuario - InspeccionCalidad (1:N)
-Usuario.hasMany(InspeccionCalidad, { foreignKey: 'revisado_por' });
-InspeccionCalidad.belongsTo(Usuario, { foreignKey: 'revisado_por' });
+// Categorias <-> Productos
+Categoria.hasMany(Producto, { foreignKey: 'categoria_id', onDelete: 'SET NULL' });
+Producto.belongsTo(Categoria, { foreignKey: 'categoria_id' });
 
-// Usuario - ParoLinea (1:N)
-Usuario.hasMany(ParoLinea, { foreignKey: 'registrado_por' });
-ParoLinea.belongsTo(Usuario, { foreignKey: 'registrado_por' });
+// Productos <-> ProductoImagenes
+Producto.hasMany(ProductoImagen, { foreignKey: 'producto_id', onDelete: 'CASCADE' });
+ProductoImagen.belongsTo(Producto, { foreignKey: 'producto_id' });
 
-// Usuario - Movimiento (1:N)
-Usuario.hasMany(Movimiento, { foreignKey: 'cambiado_por' });
-Movimiento.belongsTo(Usuario, { foreignKey: 'cambiado_por' });
+// Productos <-> Pedidos
+Producto.hasMany(Pedido, { foreignKey: 'producto_id', onDelete: 'SET NULL' });
+Pedido.belongsTo(Producto, { foreignKey: 'producto_id' });
 
-// Usuario - FallaTecnica (1:N)
-Usuario.hasMany(FallaTecnica, { foreignKey: 'registrado_por' });
-FallaTecnica.belongsTo(Usuario, { foreignKey: 'registrado_por' });
+// Comprador/Vendedor <-> Pedidos
+Usuario.hasMany(Pedido, { foreignKey: 'comprador_id', as: 'Compras', onDelete: 'SET NULL' });
+Pedido.belongsTo(Usuario, { foreignKey: 'comprador_id', as: 'Comprador' });
 
-// Usuario - Notificacion (1:N)
-Usuario.hasMany(Notificacion, { foreignKey: 'usuario_id' });
-Notificacion.belongsTo(Usuario, { foreignKey: 'usuario_id' });
+Usuario.hasMany(Pedido, { foreignKey: 'vendedor_id', as: 'Ventas', onDelete: 'SET NULL' });
+Pedido.belongsTo(Usuario, { foreignKey: 'vendedor_id', as: 'Vendedor' });
 
-// OrdenTrabajo - Pieza (1:N)
-// OrdenTrabajo.hasMany(Pieza, { foreignKey: 'orden_id' });
-// Pieza.belongsTo(OrdenTrabajo, { foreignKey: 'orden_id' });
+// Pedido <-> Disputas (Uno a Uno)
+Pedido.hasOne(Disputa, { foreignKey: 'pedido_id', onDelete: 'CASCADE' });
+Disputa.belongsTo(Pedido, { foreignKey: 'pedido_id' });
 
-// OrdenTrabajo - ParoLinea (1:N)
-OrdenTrabajo.hasMany(ParoLinea, { foreignKey: 'orden_id' });
-ParoLinea.belongsTo(OrdenTrabajo, { foreignKey: 'orden_id' });
+// Comprador / Vendedor / Admin <-> Disputas
+Usuario.hasMany(Disputa, { foreignKey: 'comprador_id', as: 'DisputasComprador', onDelete: 'SET NULL' });
+Disputa.belongsTo(Usuario, { foreignKey: 'comprador_id', as: 'Comprador' });
 
-// OrdenTrabajo - FallaTecnica (1:N)
-OrdenTrabajo.hasMany(FallaTecnica, { foreignKey: 'orden_id' });
-FallaTecnica.belongsTo(OrdenTrabajo, { foreignKey: 'orden_id' });
+Usuario.hasMany(Disputa, { foreignKey: 'vendedor_id', as: 'DisputasVendedor', onDelete: 'SET NULL' });
+Disputa.belongsTo(Usuario, { foreignKey: 'vendedor_id', as: 'Vendedor' });
 
+Usuario.hasMany(Disputa, { foreignKey: 'admin_id', as: 'DisputasModeradas', onDelete: 'SET NULL' });
+Disputa.belongsTo(Usuario, { foreignKey: 'admin_id', as: 'Administrador' });
 
-// Relación: Una orden tiene muchas piezas 
-// //OrdenTRabajo - Pieza (1:N)
-OrdenTrabajo.hasMany(Pieza, {foreignKey: 'orden_id',as: 'piezas' });
-Pieza.belongsTo(OrdenTrabajo, { foreignKey: 'orden_id', as: 'orden'});
+// Vendedor / Pedido <-> Retiros
+Usuario.hasMany(RetiroVendedor, { foreignKey: 'vendedor_id', onDelete: 'CASCADE' });
+RetiroVendedor.belongsTo(Usuario, { foreignKey: 'vendedor_id', as: 'Vendedor' });
 
-// Estacion - Pieza (1:N) - CORREGIDO CON ALIAS
-Estacion.hasMany(Pieza, { 
-    foreignKey: 'estacion_actual_id', 
-    as: 'piezas'  // Una estación tiene muchas piezas
-});
-Pieza.belongsTo(Estacion, { 
-    foreignKey: 'estacion_actual_id', 
-    as: 'estacion'  // Una pieza pertenece a una estación
-});
+Pedido.hasMany(RetiroVendedor, { foreignKey: 'pedido_id', onDelete: 'SET NULL' });
+RetiroVendedor.belongsTo(Pedido, { foreignKey: 'pedido_id' });
 
+// Pedido / UsuarioAccion <-> HistoricoPedidos
+Pedido.hasMany(HistoricoPedido, { foreignKey: 'pedido_id', onDelete: 'CASCADE' });
+HistoricoPedido.belongsTo(Pedido, { foreignKey: 'pedido_id' });
 
-// Pieza - InspeccionCalidad (1:N)
-Pieza.hasMany(InspeccionCalidad, { foreignKey: 'pieza_id' });
-InspeccionCalidad.belongsTo(Pieza, { foreignKey: 'pieza_id' });
+Usuario.hasMany(HistoricoPedido, { foreignKey: 'usuario_accion_id', onDelete: 'SET NULL' });
+HistoricoPedido.belongsTo(Usuario, { foreignKey: 'usuario_accion_id', as: 'UsuarioAccion' });
 
-// Pieza - Movimiento (1:N)
-Pieza.hasMany(Movimiento, { foreignKey: 'pieza_id' });
-Movimiento.belongsTo(Pieza, { foreignKey: 'pieza_id' });
+// Usuario / Producto <-> Transacciones Premium
+Usuario.hasMany(TransaccionPremium, { foreignKey: 'usuario_id', onDelete: 'CASCADE' });
+TransaccionPremium.belongsTo(Usuario, { foreignKey: 'usuario_id' });
 
-// Pieza - FallaTecnica (1:N)
-Pieza.hasMany(FallaTecnica, { foreignKey: 'pieza_id' });
-FallaTecnica.belongsTo(Pieza, { foreignKey: 'pieza_id' });
+Producto.hasMany(TransaccionPremium, { foreignKey: 'producto_id', onDelete: 'SET NULL' });
+TransaccionPremium.belongsTo(Producto, { foreignKey: 'producto_id' });
 
-// FallaTecnica - Evidencia (1:N)
-FallaTecnica.hasMany(Evidencia, { foreignKey: 'falla_id' });
-Evidencia.belongsTo(FallaTecnica, { foreignKey: 'falla_id' });
-
-// Exportar modelos y conexión
+// Exportar base de datos y modelos
 module.exports = {
-    sequelize,
-    Rol,
-    Usuario,
-    TokenMovil,
-    Estacion,
-    OrdenTrabajo,
-    Pieza,
-    InspeccionCalidad,
-    ParoLinea,
-    Movimiento,
-    FallaTecnica,
-    Evidencia,
-    Notificacion
+  sequelize,
+  Rol,
+  Usuario,
+  Categoria,
+  Producto,
+  ProductoImagen,
+  Pedido,
+  Disputa,
+  RetiroVendedor,
+  HistoricoPedido,
+  TransaccionPremium
 };

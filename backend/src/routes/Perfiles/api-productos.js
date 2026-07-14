@@ -1,5 +1,5 @@
 const express = require("express");
-const adminRoute = express.Router();
+const productoRoute = express.Router();
 const AsyncHandler = require("express-async-handler");
 const { sequelize } = require('../../models');
 const { Op } = require('sequelize');
@@ -8,4 +8,4 @@ require('dotenv').config();
 
 
 
-module.exports = adminRoute;
+module.exports = productoRoute;
