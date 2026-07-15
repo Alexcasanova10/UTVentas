@@ -74,10 +74,16 @@ app.get('/api/test-db', async (req, res) => {
     }
 });
 
+//Importar rutas
+
+const sesionUsuarioRoute = require("./src/routes/SesionUsuario/apis-sesion")
+
+//Route SesionesUsuario
+app.use("/api/sesiones",sesionUsuarioRoute)
+
+
 /*
 
-//Importar rutas
-const sesionUsuarioRoute = require("./src/routes/SesionUsuario/apis-sesion")
 
 // RUTAS DE EJEMPLO
 const protectedRoute = require("./src/routes/SesionUsuario/protegidasRoutes")
@@ -88,8 +94,6 @@ const compradorRoute = require("./src/routes/Perfiles/api-comprador")
 const productoRoute = require("./src/routes/Perfiles/api-productos")
  
 
-//Route SesionesUsuario
-app.use("/api/sesiones",sesionUsuarioRoute)
 
 //Route protegidas
 app.use("/api/protegidas",protectedRoute)
