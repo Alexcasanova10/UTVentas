@@ -6,6 +6,8 @@ const { Usuario, Rol, sequelize } = require("../../models"); // Importación uni
 const bcrypt = require('bcryptjs');
 const nodemailer = require('nodemailer');
 require('dotenv').config();
+const generateToken = require("../../tokenGenerate"); // Tu generador de tokens JWT
+const { proteger } = require("../../middlewares/authMiddleware");
 
 // Almacenamiento temporal en memoria para los códigos de verificación (correo -> { codigo, expiracion })
 // Nota: En producción esto se puede mover a Redis o a una tabla temporal en la base de datos
@@ -95,113 +97,7 @@ usuarioRoute.post("/solicitar-codigo", AsyncHandler(async (req, res) => {
 }));
 
 
-/* vieja API
-usuarioRoute.post("/registro-usuario", AsyncHandler(async (req, res) => {
-    const transaction = await sequelize.transaction();
-    
-    try {
-        const { nombre, correo, password, rol_id, codigo, telefono_defecto } = req.body;
 
-        // Validaciones de campos obligatorios
-        if (!nombre || !correo || !password || !rol_id || !codigo) {
-            await transaction.rollback();
-            return res.status(400).json({
-                success: false,
-                message: "Todos los campos son obligatorios: nombre, correo, password, rol_id, codigo"
-            });
-        }
-
-        // Validar tamaño de contraseña
-        if (password.length < 6) {
-            await transaction.rollback();
-            return res.status(400).json({
-                success: false,
-                message: "La contraseña debe tener al menos 6 caracteres"
-            });
-        }
-
-        // VALIDAR EL CÓDIGO DE VERIFICACIÓN ENVIADO AL CORREO
-        const datosCodigo = codigosTemporales[correo];
-        if (!datosCodigo) {
-            await transaction.rollback();
-            return res.status(400).json({
-                success: false,
-                message: "No se ha solicitado ningún código para este correo o ya expiró"
-            });
-        }
-
-        if (datosCodigo.expiracion < Date.now()) {
-            delete codigosTemporales[correo]; // Limpiar código expirado
-            await transaction.rollback();
-            return res.status(400).json({
-                success: false,
-                message: "El código de verificación ha expirado, solicita uno nuevo"
-            });
-        }
-
-        if (datosCodigo.codigo !== codigo) {
-            await transaction.rollback();
-            return res.status(400).json({
-                success: false,
-                message: "El código de verificación ingresado es incorrecto"
-            });
-        }
-
-        // 1. Verificar que el rol ingresado existe en la base de datos
-        const rolExistente = await Rol.findByPk(rol_id, { transaction });
-        if (!rolExistente) {
-            await transaction.rollback();
-            return res.status(400).json({
-                success: false,
-                message: `El rol seleccionado con ID ${rol_id} no existe`
-            });
-        }
-
-        // Encriptar password usando la biblioteca bcryptjs
-        const salt = await bcrypt.genSalt(10);
-        const contrasena_hash = await bcrypt.hash(password, salt);
-
-        // 2. Crear el usuario en la base de datos con los campos correctos del modelo nuevo
-        const nuevoUsuario = await Usuario.create({
-            nombre: nombre,
-            correo: correo,
-            contrasena_hash: contrasena_hash,
-            telefono_defecto: telefono_defecto || null,
-            rol_id: rol_id,
-            es_verificado: true // Pasa automáticamente a verificado porque ya validamos el token de correo
-        }, { transaction });
-
-        // Limpiar el código temporal usado de la memoria
-        delete codigosTemporales[correo];
-
-        await transaction.commit();
-
-        res.status(201).json({
-            success: true,
-            message: "¡Registro completado con éxito! Tu cuenta de UTVentas ha sido creada y verificada",
-            data: {
-                usuario_id: nuevoUsuario.usuario_id,
-                nombre: nuevoUsuario.nombre,
-                correo: nuevoUsuario.correo,
-                rol_id: nuevoUsuario.rol_id,
-                rol_nombre: rolExistente.nombre,
-                es_verificado: nuevoUsuario.es_verificado,
-                fecha_registro: nuevoUsuario.fecha_registro
-            }
-        });
-
-    } catch (error) {
-        if (transaction && !transaction.finished) {
-            await transaction.rollback();
-        }
-        console.error('Error durante el registro del estudiante:', error);
-        res.status(500).json({
-            success: false,
-            message: "Error interno del servidor al procesar el registro"
-        });
-    }
-}));
-*/
 
 // ==========================================
 // 2. API DE REGISTRO DE USUARIO (CON NOMBRE DE ROL)
@@ -328,63 +224,248 @@ usuarioRoute.post("/registro-usuario", AsyncHandler(async (req, res) => {
 }));
 
 
+// ==========================================
+// 3. API DE INICIO DE SESIÓN (LOGIN)
+// ==========================================
+usuarioRoute.post("/login", AsyncHandler(async (req, res) => {
+    const { correo, password } = req.body;
+
+    // 1. Validar que se envíen ambos campos obligatorios
+    if (!correo || !password) {
+        return res.status(400).json({
+            success: false,
+            message: "Por favor, ingresa tu correo y contraseña"
+        });
+    }
+
+    // 2. EXCLUSIVO UTJ: Validar patrón estricto (10 dígitos + @soy.utj.edu.mx)
+    const utjEmailRegex = /^\d{10}@soy\.utj\.edu\.mx$/;
+    if (!utjEmailRegex.test(correo)) {
+        return res.status(400).json({
+            success: false,
+            message: "El formato de correo institucional de la UTJ no es válido"
+        });
+    }
+
+    // 3. Buscar al usuario por correo, incluyendo su Rol asociado
+    const usuario = await Usuario.findOne({
+        where: { correo },
+        include: [{
+            model: Rol,
+            attributes: ['rol_id', 'nombre']
+        }]
+    });
+
+    // 4. Si el usuario no existe
+    if (!usuario) {
+        return res.status(401).json({
+            success: false,
+            message: "Credenciales incorrectas (usuario no encontrado)"
+        });
+    }
+
+    // 5. Verificar si el usuario ha completado el proceso de verificación de correo
+    if (!usuario.es_verificado) {
+        return res.status(403).json({
+            success: false,
+            message: "Esta cuenta no está verificada. Por favor completa tu registro usando el código de tu correo"
+        });
+    }
+
+    // 6. Verificar la contraseña utilizando bcryptjs con el hash de la Base de Datos
+    const contrasenaCorrecta = await bcrypt.compare(password, usuario.contrasena_hash);
+    if (!contrasenaCorrecta) {
+        return res.status(401).json({
+            success: false,
+            message: "Credenciales incorrectas (contraseña inválida)"
+        });
+    }
+
+    // 7. Generar el token usando tu función importada (le pasamos el id correcto: usuario_id)
+    const token = generateToken(usuario.usuario_id);
+
+    // 8. Opcional: Guardar en la sesión si tu app usa Express-Session (Prioridad 2 de tu authMiddleware)
+    if (req.session) {
+        req.session.token = token;
+    }
+
+    // 9. Responder con los datos de sesión y el token de acceso
+    res.status(200).json({
+        success: true,
+        message: "¡Inicio de sesión exitoso!",
+        token: token,
+        usuario: {
+            usuario_id: usuario.usuario_id,
+            nombre: usuario.nombre,
+            correo: usuario.correo,
+            rol_nombre: usuario.Rol ? usuario.Rol.nombre : null,
+            telefono_defecto: usuario.telefono_defecto,
+            es_verificado: usuario.es_verificado
+        }
+    });
+}));
+
+
+// ==========================================
+// API DE CIERRE DE SESIÓN (LOGOUT)
+// ==========================================
+usuarioRoute.post("/logout", proteger, AsyncHandler(async (req, res) => {
+    try {
+        // Si el servidor está utilizando express-session
+        if (req.session) {
+            req.session.destroy((err) => {
+                if (err) {
+                    console.error('Error destruyendo sesión en UTVentas:', err);
+                    return res.status(500).json({
+                        success: false,
+                        message: "Error al cerrar la sesión en el servidor"
+                    });
+                }
+                
+                // Limpiamos la cookie de sesión
+                res.clearCookie('connect.sid'); 
+                
+                return res.status(200).json({
+                    success: true,
+                    message: "Sesión cerrada de forma segura (Sesión de servidor eliminada)"
+                });
+            });
+        } 
+        // Si únicamente dependes de JWT puro sin cookies de sesión activa
+        else {
+            return res.status(200).json({
+                success: true,
+                message: "Logout exitoso. Recuerda destruir el token JWT en el cliente (localStorage/sessionStorage)."
+            });
+        }
+    } catch (error) {
+        console.error('Error en controlador de Logout:', error);
+        res.status(500).json({
+            success: false,
+            message: "Error interno del servidor al procesar el cierre de sesión"
+        });
+    }
+}));
+
+// ==========================================
+//  API OBTENER PERFIL (GET /perfil)
+// ==========================================
+usuarioRoute.get("/perfil", proteger, AsyncHandler(async (req, res) => {
+    try {
+        // Buscamos al usuario usando el ID que el middleware "proteger" descifró del token
+        const usuario = await Usuario.findByPk(req.usuario.id, {
+            attributes: ['nombre', 'correo', 'contrasena_hash', 'telefono_defecto']
+        });
+
+        if (!usuario) {
+            return res.status(404).json({
+                success: false,
+                message: "Usuario no encontrado"
+            });
+        }
+
+        // Retornamos los datos solicitados
+        return res.status(200).json({
+            success: true,
+            data: {
+                nombre: usuario.nombre,
+                correo: usuario.correo,
+                contrasena_hash: usuario.contrasena_hash, // Nota: Se envía el hash por tu requerimiento, aunque en producción suele omitirse por seguridad.
+                telefono_defecto: usuario.telefono_defecto
+            }
+        });
+
+    } catch (error) {
+        console.error("Error al obtener perfil en UTVentas:", error);
+        return res.status(500).json({
+            success: false,
+            message: "Error interno del servidor al obtener el perfil"
+        });
+    }
+}));
+
+
+// ==========================================
+// API ACTUALIZAR PERFIL (PUT /actualizar-perfil)
+// ==========================================
+usuarioRoute.put("/actualizar-perfil", proteger, AsyncHandler(async (req, res) => {
+    try {
+        const { telefono_contacto, password } = req.body;
+
+        // Buscar el usuario en la base de datos
+        const usuario = await Usuario.findByPk(req.usuario.id);
+
+        if (!usuario) {
+            return res.status(404).json({
+                success: false,
+                message: "Usuario no encontrado"
+            });
+        }
+
+        // Objeto temporal para guardar los campos modificados
+        const camposAActualizar = {};
+
+        // Validar y asignar nuevo teléfono si se envió en el body
+        if (telefono_contacto !== undefined) {
+            // Validación opcional: longitud del teléfono
+            if (telefono_contacto && telefono_contacto.length > 20) {
+                return res.status(400).json({
+                    success: false,
+                    message: "El teléfono no puede exceder los 20 caracteres"
+                });
+            }
+            camposAActualizar.telefono_defecto = telefono_contacto;
+        }
+
+        // Validar, encriptar y asignar nueva contraseña si se envió en el body
+        if (password) {
+            if (password.length < 6) {
+                return res.status(400).json({
+                    success: false,
+                    message: "La nueva contraseña debe tener al menos 6 caracteres"
+                });
+            }
+            // Generar hash para la nueva contraseña
+            const salt = await bcrypt.genSalt(10);
+            camposAActualizar.contrasena_hash = await bcrypt.hash(password, salt);
+        }
+
+        // Si no se envió ningún dato válido para actualizar
+        if (Object.keys(camposAActualizar).length === 0) {
+            return res.status(400).json({
+                success: false,
+                message: "No se enviaron datos válidos para actualizar (puedes actualizar 'telefono_contacto' o 'password')"
+            });
+        }
+
+        // Guardar los cambios en la base de datos
+        await usuario.update(camposAActualizar);
+
+        return res.status(200).json({
+            success: true,
+            message: "Perfil actualizado correctamente",
+            data: {
+                nombre: usuario.nombre,
+                correo: usuario.correo,
+                telefono_defecto: usuario.telefono_defecto
+            }
+        });
+
+    } catch (error) {
+        console.error("Error al actualizar perfil en UTVentas:", error);
+        return res.status(500).json({
+            success: false,
+            message: "Error interno del servidor al actualizar el perfil"
+        });
+    }
+}));
 
 
 module.exports = usuarioRoute;
 
 
 
-
-// API DE REGISTRO DE USUARIO
  
-
-// API LOGIN
- 
-
-// API LOGOUT 
-// usuarioRoute.post("/logout", 
-//     AsyncHandler(async (req, res) => {
-//         try {
-//             // Opción 1: Si estás usando sesiones (express-session)
-//             if (req.session) {
-//                 req.session.destroy((err) => {
-//                     if (err) {
-//                         console.error('Error destruyendo sesión:', err);
-//                         return res.status(500).json({
-//                             success: false,
-//                             message: "Error al cerrar sesión"
-//                         });
-//                     }
-                    
-//                     // Limpiar cookie de sesión
-//                     res.clearCookie('connect.sid'); // Nombre por defecto de la cookie de sesión
-                    
-//                     return res.json({
-//                         success: true,
-//                         message: "Sesión cerrada exitosamente"
-//                     });
-//                 });
-//             } 
-//             // Opción 2: Si solo usas JWT (el logout es client-side)
-//             else {
-//                 // Con JWT, el logout se maneja del lado del cliente eliminando el token
-//                 // Pero podemos dar una respuesta exitosa
-//                 return res.json({
-//                     success: true,
-//                     message: "Sesión cerrada exitosamente. Elimina el token del lado del cliente."
-//                 });
-//             }
-//         } catch (error) {
-//             console.error('Error en logout:', error);
-//             res.status(500).json({
-//                 success: false,
-//                 message: "Error interno del servidor"
-//             });
-//         }
-//     })
-// );
-
-// API PERFIL
- 
+  
  
  

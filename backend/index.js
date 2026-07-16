@@ -77,32 +77,28 @@ app.get('/api/test-db', async (req, res) => {
 //Importar rutas
 
 const sesionUsuarioRoute = require("./src/routes/SesionUsuario/apis-sesion")
+const vendedorRoute = require("./src/routes/Perfiles/api-vendedor")
 
 //Route SesionesUsuario
 app.use("/api/sesiones",sesionUsuarioRoute)
 
+//Route vendedor
+app.use("/api/vendedor",vendedorRoute)
+
 
 /*
 
-
-// RUTAS DE EJEMPLO
-const protectedRoute = require("./src/routes/SesionUsuario/protegidasRoutes")
-
 const adminRoute = require("./src/routes/Perfiles/api-admin")
-const vendedorRoute = require("./src/routes/Perfiles/api-vendedor")
 const compradorRoute = require("./src/routes/Perfiles/api-comprador")
 const productoRoute = require("./src/routes/Perfiles/api-productos")
  
 
 
-//Route protegidas
-app.use("/api/protegidas",protectedRoute)
-
 //Route admin
 app.use("/api/admin",adminRoute)
 
-//Route vendedor
-app.use("/api/admin",vendedorRoute)
+//Route compradorRoute
+app.use("/api/comprador",compradorRoute)
 
 //Route producto
 app.use("/api/admin",productoRoute)
