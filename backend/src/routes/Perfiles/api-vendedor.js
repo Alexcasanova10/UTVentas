@@ -1,10 +1,25 @@
-
-
 const express = require("express");
 const vendedorRoute = express.Router();
 const AsyncHandler = require("express-async-handler");
-const { Producto, Categoria, ProductoImagen, sequelize } = require("../../models");
+const { Producto, Categoria, ProductoImagen, TransaccionPremium, Pedido, Usuario, sequelize } = require("../../models");
 const { proteger, verificarRol } = require("../../middlewares/authMiddleware");
+
+
+// Helper para obtener el token de acceso de PayPal mediante OAuth 2.0
+const obtenerPaypalAccessToken = async () => {
+  const auth = Buffer.from(`${process.env.PAYPAL_CLIENT_ID}:${process.env.PAYPAL_SECRET}`).toString("base64");
+  const response = await fetch(`${process.env.PAYPAL_API_URL}/v1/oauth2/token`, {
+    method: "POST",
+    body: "grant_type=client_credentials",
+    headers: {
+      Authorization: `Basic ${auth}`,
+      "Content-Type": "application/x-www-form-urlencoded"
+    }
+  });
+  const data = await response.json();
+  return data.access_token;
+};
+
 
 // ==========================================
 // API CREAR PRODUCTO (POST /productos)
@@ -130,7 +145,6 @@ vendedorRoute.post(
     }
   })
 );
-
 
 // ==========================================
 // API EDITAR PRODUCTO (PUT /productos/editar/:id)
@@ -336,6 +350,332 @@ vendedorRoute.delete(
   })
 );
 
+// =========================================================================
+// API MIS PUBLICACIONES (GET /api/vendedor/mis-publicaciones)
+// =========================================================================
+// Permite al vendedor logueado listar todos los productos que ha publicado,
+// incluyendo tanto los activos como los inactivos/pausados.
+// =========================================================================
+
+vendedorRoute.get("/mis-publicaciones",
+  proteger,
+  verificarRol(["Vendedor"]),
+  AsyncHandler(async (req, res) => {
+    try {
+      // Obtenemos el ID del vendedor autenticado desde el middleware 'proteger'
+      const vendedorId = req.usuario.id;
+
+      // Buscar todos los productos que pertenecen a este vendedor
+      const publicaciones = await Producto.findAll({
+        where: {
+          usuario_id: vendedorId
+        },
+        include: [
+          {
+            model: Categoria,
+            attributes: ["categoria_id", "nombre"]
+          },
+          {
+            model: ProductoImagen,
+            attributes: ["imagen_id", "url_imagen", "es_principal"]
+          }
+        ],
+        // Ordenamos por fecha de publicación (los más recientes primero)
+        order: [["fecha_publicacion", "DESC"]]
+      });
+
+      return res.status(200).json({
+        success: true,
+        count: publicaciones.length,
+        data: publicaciones
+      });
+
+    } catch (error) {
+      console.error("Error al obtener las publicaciones del vendedor:", error);
+      return res.status(500).json({
+        success: false,
+        message: "Error interno del servidor al consultar tus publicaciones"
+      });
+    }
+  })
+);
+
+// =========================================================================
+// API OBTENER UNA PUBLICACIÓN ESPECÍFICA POR ID (GET /api/vendedor/mis-publicaciones/:id)
+// =========================================================================
+vendedorRoute.get("/mis-publicaciones/:id",
+  proteger,
+  verificarRol(["Vendedor"]),
+  AsyncHandler(async (req, res) => {
+    try {
+      const productoId = req.params.id;
+      const vendedorId = req.usuario.id; // Extraído de forma segura por el middleware 'proteger'
+
+      // Buscar el producto con sus imágenes y categoría
+      const producto = await Producto.findByPk(productoId, {
+        include: [
+          {
+            model: Categoria,
+            attributes: ["categoria_id", "nombre"]
+          },
+          {
+            model: ProductoImagen,
+            attributes: ["imagen_id", "url_imagen", "es_principal"]
+          }
+        ]
+      });
+
+      // 1. Validar si el producto existe
+      if (!producto) {
+        return res.status(404).json({
+          success: false,
+          message: "La publicación solicitada no existe"
+        });
+      }
+
+      // 2. Control de Acceso: Validar que el vendedor actual sea el dueño del producto
+      if (producto.usuario_id !== vendedorId) {
+        return res.status(403).json({
+          success: false,
+          message: "No tienes permisos para ver esta publicación porque no eres el propietario"
+        });
+      }
+
+      // Si todo es correcto, devolvemos el producto (activo o inactivo)
+      return res.status(200).json({
+        success: true,
+        data: producto
+      });
+
+    } catch (error) {
+      console.error("Error al obtener la publicación del vendedor:", error);
+      return res.status(500).json({
+        success: false,
+        message: "Error interno del servidor al consultar la publicación"
+      });
+    }
+  })
+);
+
+
+
+// =========================================================================
+// API CONTRATAR PREMIUM (PUT /api/vendedor/promover-premium/:id)
+// =========================================================================
+// Recibe el 'orderId' generado por el frontend en PayPal, captura los $5.00 USD,
+// registra la transacción y activa la visibilidad premium del producto por 30 días.
+// =========================================================================
+vendedorRoute.put("/promover-premium/:id",
+  proteger,
+  verificarRol(["Vendedor"]),
+  AsyncHandler(async (req, res) => {
+    const productoId = req.params.id;
+    const vendedorId = req.usuario.id;
+    const { orderId } = req.body; // El ID de la orden que el frontend ya aprobó en PayPal
+
+    if (!orderId) {
+      return res.status(400).json({ success: false, message: "El parámetro orderId de PayPal es obligatorio" });
+    }
+
+    // 1. Verificar existencia y propiedad del producto
+    const producto = await Producto.findByPk(productoId);
+    if (!producto) {
+      return res.status(404).json({ success: false, message: "El producto que deseas promover no existe" });
+    }
+
+    if (producto.usuario_id !== vendedorId) {
+      return res.status(403).json({ success: false, message: "No tienes autorización para alterar este producto" });
+    }
+
+    let transaction;
+    try {
+      // 2. Comunicarse con la API de PayPal para capturar el pago definitivo
+      const accessToken = await obtenerPaypalAccessToken();
+      const urlCapture = `${process.env.PAYPAL_API_URL}/v2/checkout/orders/${orderId}/capture`;
+      
+      const responsePaypal = await fetch(urlCapture, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          "Content-Type": "application/json"
+        }
+      });
+
+      const datosPago = await responsePaypal.json();
+
+      // Validar si PayPal rechazó o no completó con éxito el cobro
+      if (datosPago.status !== "COMPLETED") {
+        return res.status(400).json({
+          success: false,
+          message: "No se pudo procesar el pago en PayPal. Verifique los fondos o la orden.",
+          paypal_error: datosPago
+        });
+      }
+
+      // 3. Si el dinero ya está en nuestra cuenta, alteramos la base de datos de forma segura
+      transaction = await sequelize.transaction();
+
+      // Definir fechas: Inicia hoy, vence en exactamente 30 días naturales
+      const ahora = new Date();
+      const fechaExpiracion = new Date();
+      fechaExpiracion.setDate(ahora.getDate() + 30);
+
+      // A) Crear registro histórico del pago
+      await TransaccionPremium.create({
+        usuario_id: vendedorId,
+        producto_id: productoId,
+        monto: 5.00,
+        tipo_pago: "destacado_premium",
+        fecha_pago: ahora,
+        expiracion: fechaExpiracion
+      }, { transaction });
+
+      // B) Actualizar el estado premium directamente en el Producto
+      await producto.update({
+        es_premium: true,
+        premium_hasta: fechaExpiracion
+      }, { transaction });
+
+      // Confirmar todos los cambios en cascada SQL
+      await transaction.commit();
+
+      return res.status(200).json({
+        success: true,
+        message: `¡Felicidades! Tu producto '${producto.titulo}' ahora es Premium hasta el ${fechaExpiracion.toLocaleDateString()}`,
+        data: {
+          producto_id: producto.producto_id,
+          es_premium: producto.es_premium,
+          premium_hasta: producto.premium_hasta
+        }
+      });
+
+    } catch (error) {
+      // Si la transacción SQL se abrió pero ocurrió un fallo intermedio, revertimos
+      if (transaction && !transaction.finished) {
+        await transaction.rollback();
+      }
+      console.error("Fallo crítico al procesar la suscripción premium:", error);
+      return res.status(500).json({
+        success: false,
+        message: "Error de servidor al registrar la suscripción premium"
+      });
+    }
+  })
+);
+
+
+// =========================================================================
+// 1. LISTA GENERAL DE VENTAS PARA EL VENDEDOR (GET /api/vendedores/historial-ventas)
+// =========================================================================
+// ======================================================================
+// HISTORIAL DE VENTAS
+// ======================================================================
+
+vendedorRoute.get("/historial-ventas",
+  proteger,
+  verificarRol(["Vendedor"]),
+  AsyncHandler(async (req, res) => {
+
+    const vendedorId = req.usuario.id;
+
+    const ventas = await Pedido.findAll({
+      where: {
+        vendedor_id: vendedorId
+      },
+      include: [
+        {
+          model: Producto,
+          attributes: [
+            "producto_id",
+            "titulo",
+            "precio",
+            "es_activo"
+          ]
+        },
+        {
+          model: Usuario,
+          as: "Comprador",
+          attributes: [
+            "usuario_id",
+            "nombre",
+            "correo"
+          ]
+        }
+      ],
+      order: [["fecha_creacion", "DESC"]]
+    });
+
+    return res.status(200).json({
+      success: true,
+      message: "Historial de ventas obtenido correctamente.",
+      ventas
+    });
+
+  })
+);
+// =========================================================================
+// 2. DETALLE DE PEDIDO INDIVIDUAL PARA VENDEDOR (GET /api/vendedores/ventas/:pedido_id)
+// =========================================================================
+// ======================================================================
+// DETALLE DE UNA VENTA
+// ======================================================================
+
+vendedorRoute.get("/ventas/:pedido_id", proteger,
+  verificarRol(["Vendedor"]),
+  AsyncHandler(async (req, res) => {
+
+    const vendedorId = req.usuario.id;
+    const { pedido_id } = req.params;
+
+    const venta = await Pedido.findOne({
+      where: {
+        pedido_id,
+        vendedor_id: vendedorId
+      },
+      include: [
+        {
+          model: Producto,
+          attributes: [
+            "producto_id",
+            "titulo",
+            "descripcion",
+            "precio",
+            "es_activo"
+          ]
+        },
+        {
+          model: Usuario,
+          as: "Comprador",
+          attributes: [
+            "usuario_id",
+            "nombre",
+            "correo"
+          ]
+        }
+      ]
+    });
+
+    if (!venta) {
+      return res.status(404).json({
+        success: false,
+        message: "La venta solicitada no existe o no pertenece a tu cuenta."
+      });
+    }
+
+    const respuestaSegura = venta.toJSON();
+
+    // Solo mostrar el token cuando la compra ya fue completada
+    if (respuestaSegura.estado !== "entregado_completado") {
+      delete respuestaSegura.token_entrega;
+    }
+
+    return res.status(200).json({
+      success: true,
+      venta: respuestaSegura
+    });
+
+  })
+);
 
 module.exports = vendedorRoute;
 

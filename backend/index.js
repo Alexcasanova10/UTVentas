@@ -75,9 +75,13 @@ app.get('/api/test-db', async (req, res) => {
 });
 
 //Importar rutas
-
 const sesionUsuarioRoute = require("./src/routes/SesionUsuario/apis-sesion")
 const vendedorRoute = require("./src/routes/Perfiles/api-vendedor")
+const productoRoute = require("./src/routes/Perfiles/api-productos")
+const compradorRoute = require("./src/routes/Perfiles/api-comprador")
+const pedidoRoute = require("./src/routes/Perfiles/api-pedido")
+
+
 
 //Route SesionesUsuario
 app.use("/api/sesiones",sesionUsuarioRoute)
@@ -85,23 +89,23 @@ app.use("/api/sesiones",sesionUsuarioRoute)
 //Route vendedor
 app.use("/api/vendedor",vendedorRoute)
 
+//Route producto
+app.use("/api/productos", productoRoute)
 
-/*
-
-const adminRoute = require("./src/routes/Perfiles/api-admin")
-const compradorRoute = require("./src/routes/Perfiles/api-comprador")
-const productoRoute = require("./src/routes/Perfiles/api-productos")
- 
-
-
-//Route admin
-app.use("/api/admin",adminRoute)
-
-//Route compradorRoute
+//Route comprador
 app.use("/api/comprador",compradorRoute)
 
-//Route producto
-app.use("/api/admin",productoRoute)
+//Route pedidos
+app.use("/api/pedidos",pedidoRoute)
+
+
+
+/*
+const adminRoute = require("./src/routes/Perfiles/api-admin")
+
+ 
+//Route admin
+app.use("/api/admin",adminRoute)
 
 */
 

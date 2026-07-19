@@ -7,6 +7,7 @@ const sequelize = new Sequelize(
     {
         host: process.env.DB_HOST || 'localhost',
         port: process.env.DB_PORT || 3306,
+        logging: console.log,
         dialect: 'mysql',
         logging: false, // Cambia a true si quieres ver las consultas SQL
         define: {
