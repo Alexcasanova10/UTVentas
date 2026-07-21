@@ -96,9 +96,6 @@ usuarioRoute.post("/solicitar-codigo", AsyncHandler(async (req, res) => {
     }
 }));
 
-
-
-
 // ==========================================
 // 2. API DE REGISTRO DE USUARIO (CON NOMBRE DE ROL)
 // ==========================================

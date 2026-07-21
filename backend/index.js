@@ -76,6 +76,7 @@ app.get('/api/test-db', async (req, res) => {
 
 //Importar rutas
 const sesionUsuarioRoute = require("./src/routes/SesionUsuario/apis-sesion")
+const adminRoute = require("./src/routes/Perfiles/api-admin")
 const vendedorRoute = require("./src/routes/Perfiles/api-vendedor")
 const productoRoute = require("./src/routes/Perfiles/api-productos")
 const compradorRoute = require("./src/routes/Perfiles/api-comprador")
@@ -98,16 +99,9 @@ app.use("/api/comprador",compradorRoute)
 //Route pedidos
 app.use("/api/pedidos",pedidoRoute)
 
-
-
-/*
-const adminRoute = require("./src/routes/Perfiles/api-admin")
-
- 
 //Route admin
 app.use("/api/admin",adminRoute)
 
-*/
 
 
 // Middleware para rutas no encontradas

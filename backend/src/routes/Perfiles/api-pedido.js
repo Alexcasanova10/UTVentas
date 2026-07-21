@@ -71,19 +71,6 @@ pedidoRoute.post(
       // 2. Conectarse a PayPal con intención AUTHORIZE (Escrow)
       const accessToken = await obtenerPaypalAccessToken();
       
-      // const paypalOrderPayload = {
-      //   intent: "AUTHORIZE", 
-      //   purchase_units: [
-      //     {
-      //       amount: {
-      //         currency_code: "USD", 
-      //         value: parseFloat(producto.precio).toFixed(2)
-      //       },
-      //       description: `Compra en UTVentas: ${producto.titulo}`
-      //     }
-      //   ]
-      // };
-
       const paypalOrderPayload = {
           intent: "AUTHORIZE", 
           purchase_units: [
