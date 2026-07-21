@@ -1,7 +1,7 @@
 const express = require("express");
 const adminRoute = express.Router();
 const AsyncHandler = require("express-async-handler");
-const { sequelize, Usuario, Rol, Categoria, Pedido, Disputa, HistoricoPedido } = require('../../models');
+const { sequelize, Usuario, Rol, Categoria, Pedido, Disputa, HistoricoPedido, Producto} = require('../../models');
 const { Op } = require('sequelize');
 const bcrypt = require('bcrypt'); // 🔑 Asegúrate de tener instalado bcrypt
 const { proteger, verificarRol } = require("../../middlewares/authMiddleware");
@@ -441,12 +441,166 @@ adminRoute.get("/auditoria-pedidos",
 );
 
 
+// =========================================================================
+// 8.VER USUARIOS ACORDE ESTATUS  (GET /api/admins/usuarios)
+// =========================================================================
+// Listar usuarios con su estatus de activación
+// =========================================================================
+adminRoute.get("/usuarios",
+  proteger,
+  verificarRol(["Administrador"]),
+  AsyncHandler(async (req, res) => {
+    const usuarios = await Usuario.findAll({
+      attributes: ["usuario_id", "nombre", "correo", "telefono_defecto", "es_activo", "es_verificado", "fecha_registro"],
+      include: [{ model: Rol, attributes: ["nombre"] }],
+      order: [["usuario_id", "DESC"]]
+    });
+
+    return res.status(200).json({
+      success: true,
+      data: usuarios
+    });
+  })
+);
 
 
+// =========================================================================
+// 9.BANEAR USUARIOS  (PUT /api/admin/usuarios/:usuario_id/estatus)
+// =========================================================================
+// Cambiar estado de activación (Baneo / Desbaneo)
+// =========================================================================
+adminRoute.put("/usuarios/:usuario_id/estatus",
+  proteger,
+  verificarRol(["Administrador"]),
+  AsyncHandler(async (req, res) => {
+    const { usuario_id } = req.params;
+    const { es_activo } = req.body; // Esperamos true o false
+
+    if (typeof es_activo !== "boolean") {
+      return res.status(400).json({
+        success: false,
+        message: "El campo 'es_activo' es obligatorio y debe ser un valor booleano (true o false)."
+      });
+    }
+
+    const usuario = await Usuario.findByPk(usuario_id);
+    if (!usuario) {
+      return res.status(404).json({
+        success: false,
+        message: "El usuario especificado no existe."
+      });
+    }
+
+    // Evitar que el admin se desactive a sí mismo por error
+    if (usuario.usuario_id === req.usuario.id) {
+      return res.status(400).json({
+        success: false,
+        message: "No puedes desactivar tu propia cuenta de administrador."
+      });
+    }
+
+    usuario.es_activo = es_activo;
+    await usuario.save();
+
+    const accion = es_activo ? "activada" : "desactivada / suspendida";
+
+    return res.status(200).json({
+      success: true,
+      message: `La cuenta del usuario '${usuario.nombre}' ha sido ${accion} correctamente.`,
+      usuario: {
+        usuario_id: usuario.usuario_id,
+        nombre: usuario.nombre,
+        correo: usuario.correo,
+        es_activo: usuario.es_activo
+      }
+    });
+  })
+);
 
 
+// =========================================================================
+// 10. OBTENER KPIS Y REPORTE DE VENTAS (GET /api/admins/kpis-ventas)
+// =========================================================================
+// Retorna datos estructurados para renderizar gráficas y tarjetas en el Dashboard
+// =========================================================================
+adminRoute.get("/kpis-ventas",
+  proteger,
+  verificarRol(["Administrador"]),
+  AsyncHandler(async (req, res) => {
+    // 1. Agrupamiento por Estado de Pedido (Monto total y Cantidad de pedidos)
+    const desglosePorEstado = await Pedido.findAll({
+      attributes: [
+        "estado",
+        [sequelize.fn("COUNT", sequelize.col("pedido_id")), "total_pedidos"],
+        [sequelize.fn("COALESCE", sequelize.fn("SUM", sequelize.col("precio_final")), 0), "monto_total"]
+      ],
+      group: ["estado"],
+      raw: true
+    });
 
+    // 2. Mapeo estructurado para fácil consumo en el Frontend (Evita valores indefinidos)
+    const estadosTarget = ["entregado_completado", "pagado_escrow", "pendiente_pago", "en_disputa", "cancelado_reembolsado"];
+    
+    const estadosResumen = {};
+    estadosTarget.forEach(estado => {
+      const registro = desglosePorEstado.find(item => item.estado === estado);
+      estadosResumen[estado] = {
+        cantidad: registro ? parseInt(registro.total_pedidos, 10) : 0,
+        monto: registro ? parseFloat(registro.monto_total) : 0.0
+      };
+    });
 
+    // 3. Métricas Financieras Clave (KPI Cards)
+    // Dinero procesado con éxito (entregado_completado) + retenciones activas (pagado_escrow)
+    const totalIngresosConfirmados = estadosResumen.entregado_completado.monto;
+    const totalEnEscrow = estadosResumen.pagado_escrow.monto;
+    const totalVentasCompletadas = estadosResumen.entregado_completado.cantidad;
+    
+    // Ticket promedio de compra
+    const ticketPromedio = totalVentasCompletadas > 0 
+      ? (totalIngresosConfirmados / totalVentasCompletadas).toFixed(2) 
+      : "0.00";
+
+    // 4. Top 5 Productos más Vendidos (Para gráfica de barras)
+    const topProductos = await Pedido.findAll({
+      attributes: [
+        "producto_id",
+        [sequelize.fn("COUNT", sequelize.col("pedido_id")), "total_unidades_vendidas"],
+        [sequelize.fn("SUM", sequelize.col("precio_final")), "monto_recaudado"]
+      ],
+      where: {
+        estado: ["entregado_completado", "pagado_escrow"] // Solo contabilizamos ventas reales
+      },
+      include: [
+        {
+          model: Producto,
+          attributes: ["titulo", "precio"]
+        }
+      ],
+      group: ["producto_id", "Producto.producto_id"],
+      order: [[sequelize.literal("total_unidades_vendidas"), "DESC"]],
+      limit: 5
+    });
+
+    // 5. Respuesta JSON con la estructura ideal para el Frontend
+    return res.status(200).json({
+      success: true,
+      kpis: {
+        ingresos_confirmados: totalIngresosConfirmados,
+        fondos_en_escrow: totalEnEscrow,
+        pedidos_completados: totalVentasCompletadas,
+        ticket_promedio: parseFloat(ticketPromedio)
+      },
+      desglose_estados: estadosResumen,
+      grafica_distribucion_estados: {
+        labels: Object.keys(estadosResumen),
+        cantidades: Object.values(estadosResumen).map(e => e.cantidad),
+        montos: Object.values(estadosResumen).map(e => e.monto)
+      },
+      top_productos: topProductos
+    });
+  })
+);
 
 
 

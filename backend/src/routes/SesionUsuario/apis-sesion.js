@@ -278,6 +278,14 @@ usuarioRoute.post("/login", AsyncHandler(async (req, res) => {
         });
     }
 
+    //🛑 NUEVA VALIDACIÓN: Control de Suspensión / Estado de Cuenta
+    if (!usuario.es_activo) {
+    return res.status(403).json({
+        success: false,
+        message: "Tu cuenta ha sido desactivada o suspendida por un administrador. Contacta a soporte UTVentas."
+    });
+    }
+
     // 7. Generar el token usando tu función importada (le pasamos el id correcto: usuario_id)
     const token = generateToken(usuario.usuario_id);
 
@@ -297,7 +305,8 @@ usuarioRoute.post("/login", AsyncHandler(async (req, res) => {
             correo: usuario.correo,
             rol_nombre: usuario.Rol ? usuario.Rol.nombre : null,
             telefono_defecto: usuario.telefono_defecto,
-            es_verificado: usuario.es_verificado
+            es_verificado: usuario.es_verificado,
+            es_activo: usuario.es_activo
         }
     });
 }));

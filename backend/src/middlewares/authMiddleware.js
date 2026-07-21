@@ -79,6 +79,19 @@ const proteger = asyncHandler(async (req, res, next) => {
         message: "El token ha expirado. Inicia sesión nuevamente" 
       });
     }
+
+    // Dentro de tu middleware proteger()
+    const usuario = await Usuario.findByPk(decoded.id);
+
+    if (!usuario || !usuario.es_activo) {
+      return res.status(401).json({ 
+        success: false, 
+        message: "Cuenta inexistente o inactiva. Sesión revocada." 
+      });
+    }
+
+
+    
     
     return res.status(401).json({ 
       success: false,
@@ -130,6 +143,8 @@ const verificarRolId = (rolesIdsPermitidos) => {
     }
   };
 };
+
+
 
 module.exports = {
   proteger,

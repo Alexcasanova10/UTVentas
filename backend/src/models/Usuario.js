@@ -38,6 +38,12 @@ module.exports = (sequelize) => {
     es_verificado: {
       type: DataTypes.BOOLEAN,
       defaultValue: false
+    },
+
+    // NUEVA COLUMNA DE "ES_ACTIVO"
+    es_activo: {
+      type: DataTypes.BOOLEAN,
+      defaultValue: true
     }
   }, {
     tableName: 'usuarios',

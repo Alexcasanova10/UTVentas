@@ -76,7 +76,8 @@ pedidoRoute.post(
           purchase_units: [
             {
               amount: {
-                currency_code: "USD", 
+                // currency_code: "USD", 
+                currency_code: "MXN", 
                 value: parseFloat(producto.precio).toFixed(2)
               },
               description: `Compra en UTVentas: ${producto.titulo}`
@@ -152,7 +153,7 @@ pedidoRoute.post(
             
             <div style="background-color: #f9f9f9; padding: 15px; border-left: 5px solid #3498db; margin: 20px 0;">
               <h3 style="margin-top: 0; color: #2980b9;">${producto.titulo}</h3>
-              <p style="margin: 5px 0;"><strong>Precio:</strong> $${producto.precio} USD</p>
+              <p style="margin: 5px 0;"><strong>Precio:</strong> $${producto.precio} MXN</p>
               <p style="margin: 5px 0;"><strong>Descripción:</strong> ${producto.descripcion}</p>
             </div>
 
